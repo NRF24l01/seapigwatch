@@ -3,6 +3,9 @@ import cv2
 from PIL import Image, ImageDraw, ImageFont
 import time
 import numpy as np
+import socket
+import pickle
+import struct
 
 # Открываем камеру
 camera = cv2.VideoCapture(0)
@@ -31,17 +34,23 @@ def add_gui(im):
     )
     return np.asarray(img)
 
-def send_image_to_server(url, frame):
-    # Преобразуем кадр в формат JPEG
-    _, img_encoded = cv2.imencode('.jpg', frame)
+def send_image_to_server(port, host, frame):
+    # Подключаемся к серверу
+    client_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+    client_socket.connect((host, port))
 
-    # Отправляем кадр на сервер
-    response = requests.post(url, files={'image': img_encoded.tobytes()})
+    # Преобразуем изображение в сериализуемый формат
+    serialized_frame = pickle.dumps(frame)
 
-    if response.status_code != 200:
-        print('Error uploading image')
-    elif response.status_code == 200:
-        print("All is good")
+    # Отправляем размер пакета на сервер
+    print(len(serialized_frame), struct.pack('!i', len(serialized_frame)))
+    client_socket.sendall(struct.pack('!i', len(serialized_frame)))
+
+    # Отправляем изображение на сервер
+    client_socket.sendall(serialized_frame)
+
+    # Закрываем соединение
+    client_socket.close()
 
 
 # URL сервера Flask, замените на актуальный адрес сервера
@@ -51,8 +60,9 @@ while True:
     frame = get_image()
 
     # Запускаем отправку кадров с камеры на сервер
-    send_image_to_server(f"{server_url}/1", frame)
-    send_image_to_server(f"{server_url}/2", add_gui(frame))
+    send_image_to_server(10, "127.0.0.1", frame)
+    send_image_to_server(25, "127.0.0.1", add_gui(frame))
+    time.sleep(1)
 
 camera.release()
 cv2.destroyAllWindows()
